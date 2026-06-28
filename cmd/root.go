@@ -1,6 +1,3 @@
-// cmd/root.go sets up the CLI using Cobra.
-// Cobra is the standard Go library for building CLI tools (used by kubectl, gh, Hugo, etc.)
-// It handles argument parsing, help text, and subcommand routing for us.
 package cmd
 
 import (
@@ -34,7 +31,6 @@ and runs each step inside a local Docker container, pausing for your input befor
 	},
 }
 
-// Execute is called by main.go to start the CLI.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
