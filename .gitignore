@@ -1,0 +1,11 @@
+# Binary output
+cidb
+/dist/
+
+# Go toolchain
+*.test
+*.out
+vendor/
+
+# macOS
+.DS_Store

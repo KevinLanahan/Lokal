@@ -1,0 +1,135 @@
+package runner
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
+)
+
+var imageMap = map[string]string{
+	"ubuntu-latest": "catthehacker/ubuntu:act-latest",
+	"ubuntu-24.04":  "catthehacker/ubuntu:act-24.04",
+	"ubuntu-22.04":  "catthehacker/ubuntu:act-22.04",
+	"ubuntu-20.04":  "catthehacker/ubuntu:act-20.04",
+}
+
+type Container struct {
+	cli *client.Client
+	id  string
+	ctx context.Context
+}
+
+func startContainer(ctx context.Context, runsOn string) (*Container, error) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, fmt.Errorf("connecting to Docker: %w\nIs Docker running?", err)
+	}
+
+	image, ok := imageMap[runsOn]
+	if !ok {
+		fmt.Printf("  ⚠  No image mapping for %q — falling back to ubuntu:22.04\n", runsOn)
+		image = "ubuntu:22.04"
+	}
+
+	fmt.Printf("  Pulling image %s (this may take a minute the first time)...\n", image)
+	reader, err := cli.ImagePull(ctx, image, types.ImagePullOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("pulling image %s: %w", image, err)
+	}
+	io.Copy(io.Discard, reader)
+	reader.Close()
+
+	workdir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := cli.ContainerCreate(ctx,
+		&container.Config{
+			Image:      image,
+			Cmd:        []string{"tail", "-f", "/dev/null"},
+			WorkingDir: "/workspace",
+		},
+		&container.HostConfig{
+			Binds: []string{workdir + ":/workspace"},
+		},
+		nil, nil, "",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating container: %w", err)
+	}
+
+	if err := cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+		return nil, fmt.Errorf("starting container: %w", err)
+	}
+
+	fmt.Printf("  Container started: %s\n", resp.ID[:12])
+	return &Container{cli: cli, id: resp.ID, ctx: ctx}, nil
+}
+
+func (c *Container) exec(command string, env map[string]string) (int, error) {
+	var envSlice []string
+	for k, v := range env {
+		envSlice = append(envSlice, k+"="+v)
+	}
+
+	execResp, err := c.cli.ContainerExecCreate(c.ctx, c.id, types.ExecConfig{
+		Cmd:          []string{"/bin/bash", "-e", "-c", command},
+		Env:          envSlice,
+		AttachStdout: true,
+		AttachStderr: true,
+		WorkingDir:   "/workspace",
+	})
+	if err != nil {
+		return -1, fmt.Errorf("creating exec: %w", err)
+	}
+
+	attach, err := c.cli.ContainerExecAttach(c.ctx, execResp.ID, types.ExecStartCheck{})
+	if err != nil {
+		return -1, fmt.Errorf("attaching to exec: %w", err)
+	}
+	defer attach.Close()
+
+	stdcopy.StdCopy(os.Stdout, os.Stderr, attach.Reader)
+
+	inspect, err := c.cli.ContainerExecInspect(c.ctx, execResp.ID)
+	if err != nil {
+		return -1, err
+	}
+	return inspect.ExitCode, nil
+}
+
+// dropShell opens an interactive bash shell inside the container.
+// We shell out to `docker exec -it` directly rather than using the Go SDK,
+// because Docker's CLI handles terminal raw mode and stdin forwarding cleanly.
+// When the user types `exit`, the subprocess exits and stdin is fully returned
+// to cidb with no goroutine races.
+func (c *Container) dropShell() error {
+	fmt.Println("\n  Dropping into container shell. Your project is at /workspace.")
+	fmt.Println("  Type 'exit' to return to cidb.\n")
+
+	cmd := exec.Command("docker", "exec", "-it", c.id, "/bin/bash")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		// A non-zero exit from bash is fine (user may have run a failing command)
+		if _, ok := err.(*exec.ExitError); !ok {
+			return fmt.Errorf("shell: %w", err)
+		}
+	}
+	return nil
+}
+
+func (c *Container) stop() {
+	c.cli.ContainerStop(c.ctx, c.id, container.StopOptions{})
+	c.cli.ContainerRemove(c.ctx, c.id, types.ContainerRemoveOptions{Force: true})
+}

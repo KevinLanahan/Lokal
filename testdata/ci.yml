@@ -1,0 +1,38 @@
+# This is a sample GitHub Actions workflow file for testing cidb.
+# To use it:
+#   cidb run testdata/ci.yml
+#
+# It has a mix of shell steps so you can see the pause/continue/shell flow in action.
+
+name: Sample CI
+
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print environment info
+        run: |
+          echo "Running on: $(uname -a)"
+          echo "Working dir: $(pwd)"
+          ls -la
+
+      - name: Set up a file
+        run: |
+          echo "hello from cidb" > /workspace/hello.txt
+          cat /workspace/hello.txt
+
+      - name: Run a multi-line script
+        run: |
+          echo "Step 1: counting files"
+          ls /workspace | wc -l
+          echo "Step 2: done"
+
+      - name: Intentionally failing step (to demo failure flow)
+        run: |
+          echo "About to fail..."
+          exit 1
+
+      - name: This step won't run because the previous one failed
+        run: echo "you should never see this"
