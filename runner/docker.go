@@ -106,11 +106,6 @@ func (c *Container) exec(command string, env map[string]string) (int, error) {
 	return inspect.ExitCode, nil
 }
 
-// dropShell opens an interactive bash shell inside the container.
-// We shell out to `docker exec -it` directly rather than using the Go SDK,
-// because Docker's CLI handles terminal raw mode and stdin forwarding cleanly.
-// When the user types `exit`, the subprocess exits and stdin is fully returned
-// to cidb with no goroutine races.
 func (c *Container) dropShell() error {
 	fmt.Println("\n  Dropping into container shell. Your project is at /workspace.")
 	fmt.Println("  Type 'exit' to return to cidb.\n")
@@ -121,7 +116,6 @@ func (c *Container) dropShell() error {
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		// A non-zero exit from bash is fine (user may have run a failing command)
 		if _, ok := err.(*exec.ExitError); !ok {
 			return fmt.Errorf("shell: %w", err)
 		}

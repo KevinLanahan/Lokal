@@ -1,5 +1,3 @@
-// runner/prompt.go handles the terminal UI — the pause prompt between steps
-// and the per-step pass/fail output.
 package runner
 
 import (
@@ -9,19 +7,16 @@ import (
 	"strings"
 )
 
-// Action represents what the user chose to do at a pause prompt.
 type Action int
 
 const (
-	ActionContinue Action = iota // run this step
-	ActionSkip                   // skip this step entirely
-	ActionShell                  // drop into a container shell before running
-	ActionRetry                  // re-show this prompt (user typed something invalid)
-	ActionAbort                  // stop the whole run
+	ActionContinue Action = iota
+	ActionSkip
+	ActionShell
+	ActionRetry
+	ActionAbort
 )
 
-// pause shows a step header and waits for the user to choose an action.
-// It loops until valid input is received.
 func pause(stepNum int, stepName string, command string) Action {
 	fmt.Println()
 	fmt.Println("  ─────────────────────────────────────────────────")
@@ -57,7 +52,6 @@ func pause(stepNum int, stepName string, command string) Action {
 	}
 }
 
-// printStepResult prints a single ✓/✗/⏭ line after a step completes.
 func printStepResult(name string, passed, skipped bool) {
 	switch {
 	case skipped:
@@ -69,7 +63,6 @@ func printStepResult(name string, passed, skipped bool) {
 	}
 }
 
-// printSummary shows the full pass/fail table at the end of a job.
 func printSummary(results []stepResult) {
 	var passed, failed, skipped int
 
