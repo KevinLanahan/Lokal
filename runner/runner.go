@@ -61,13 +61,39 @@ func Run(workflowPath string) error {
 
 	ctx := context.Background()
 
+	jobPassed := make(map[string]bool) // tracks which jobs succeeded
+	anyJobFailed := false
+
 	for _, jobID := range wf.JobOrder {
 		job := wf.Jobs[jobID]
-		if err := runJob(ctx, jobID, job, secrets); err != nil {
-			return err
+
+		// Check needs: skip this job if any dependency failed.
+		if len(job.Needs) > 0 {
+			allPassed := true
+			for _, dep := range job.Needs {
+				if !jobPassed[dep] {
+					allPassed = false
+					break
+				}
+			}
+			if !allPassed {
+				fmt.Printf("\n  ─── Job: %s (skipped — dependency failed)\n", jobID)
+				continue
+			}
+		}
+
+		err := runJob(ctx, jobID, job, secrets)
+		if err != nil {
+			anyJobFailed = true
+			jobPassed[jobID] = false
+		} else {
+			jobPassed[jobID] = true
 		}
 	}
 
+	if anyJobFailed {
+		return fmt.Errorf("workflow finished with failures")
+	}
 	return nil
 }
 

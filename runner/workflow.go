@@ -15,9 +15,25 @@ type Workflow struct {
 }
 
 type Job struct {
-	RunsOn string `yaml:"runs-on"`
-	Image  string // explicit Docker image override (e.g. GitLab CI image: field)
-	Steps  []Step `yaml:"steps"`
+	RunsOn string        `yaml:"runs-on"`
+	Image  string        // explicit Docker image override (e.g. GitLab CI image: field)
+	Needs  stringOrSlice `yaml:"needs"`
+	Steps  []Step        `yaml:"steps"`
+}
+
+// stringOrSlice handles YAML fields that can be either a string or a list of strings.
+// GitHub Actions `needs:` can be either:
+//
+//	needs: build
+//	needs: [build, test]
+type stringOrSlice []string
+
+func (s *stringOrSlice) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		*s = []string{value.Value}
+		return nil
+	}
+	return value.Decode((*[]string)(s))
 }
 
 type Step struct {
@@ -90,12 +106,74 @@ func parseGitHubWorkflow(path string) (*Workflow, error) {
 		return nil, fmt.Errorf("no jobs found in %s", path)
 	}
 
-	// Populate JobOrder from map keys (order is arbitrary but consistent)
-	for id := range wf.Jobs {
-		wf.JobOrder = append(wf.JobOrder, id)
+	wf.JobOrder = topoSort(wf.Jobs)
+	return &wf, nil
+}
+
+// topoSort returns job IDs in dependency order using Kahn's algorithm.
+// Jobs with no needs come first; a job only appears after all its dependencies.
+func topoSort(jobs map[string]Job) []string {
+	// Build in-degree count and adjacency list.
+	inDegree := make(map[string]int, len(jobs))
+	dependents := make(map[string][]string) // dependency -> jobs that need it
+
+	for id := range jobs {
+		inDegree[id] = 0
+	}
+	for id, job := range jobs {
+		for _, dep := range job.Needs {
+			if _, exists := jobs[dep]; exists {
+				inDegree[id]++
+				dependents[dep] = append(dependents[dep], id)
+			}
+		}
 	}
 
-	return &wf, nil
+	// Seed queue with jobs that have no dependencies.
+	var queue []string
+	for id, deg := range inDegree {
+		if deg == 0 {
+			queue = append(queue, id)
+		}
+	}
+	// Sort for determinism.
+	sortStrings(queue)
+
+	var order []string
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		order = append(order, cur)
+		deps := dependents[cur]
+		sortStrings(deps)
+		for _, dep := range deps {
+			inDegree[dep]--
+			if inDegree[dep] == 0 {
+				queue = append(queue, dep)
+			}
+		}
+	}
+
+	// If there's a cycle or unresolved deps, append remaining jobs.
+	seen := make(map[string]bool, len(order))
+	for _, id := range order {
+		seen[id] = true
+	}
+	for id := range jobs {
+		if !seen[id] {
+			order = append(order, id)
+		}
+	}
+
+	return order
+}
+
+func sortStrings(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j] < s[j-1]; j-- {
+			s[j], s[j-1] = s[j-1], s[j]
+		}
+	}
 }
 
 // parseWorkflow is kept for backward compatibility (tests use it).
