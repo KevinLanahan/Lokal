@@ -1,0 +1,61 @@
+package runner
+
+import (
+	"fmt"
+	"strings"
+)
+
+// runAction handles known `uses:` steps instead of skipping them.
+// Returns (handled, error) — if handled is false, the caller should skip.
+func runAction(ctr *Container, step Step) (handled bool, err error) {
+	action := strings.Split(step.Uses, "@")[0]
+
+	switch {
+	case action == "actions/checkout":
+		// Workspace is already mounted at /workspace — nothing to do.
+		fmt.Println("  (actions/checkout — workspace already mounted at /workspace)")
+		return true, nil
+
+	case action == "actions/setup-go":
+		return true, setupGo(ctr, step.With)
+
+	default:
+		return false, nil
+	}
+}
+
+func setupGo(ctr *Container, with map[string]string) error {
+	version := with["go-version"]
+	if version == "" {
+		version = "1.22.0"
+	}
+	// Strip leading ~, ^, or >= if present
+	version = strings.TrimLeft(version, "~^>=")
+	// If it's only major.minor (e.g. "1.22"), append .0
+	if strings.Count(version, ".") == 1 {
+		version += ".0"
+	}
+
+	fmt.Printf("  (actions/setup-go — installing Go %s in container)\n", version)
+
+	script := fmt.Sprintf(`
+set -e
+apt-get update -qq
+apt-get install -y -qq curl tar > /dev/null 2>&1
+curl -fsSL "https://go.dev/dl/go%s.linux-amd64.tar.gz" -o /tmp/go.tar.gz
+tar -C /usr/local -xzf /tmp/go.tar.gz
+rm /tmp/go.tar.gz
+ln -sf /usr/local/go/bin/go /usr/local/bin/go
+ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+go version
+`, version)
+
+	exitCode, err := ctr.exec(script, nil)
+	if err != nil {
+		return fmt.Errorf("setup-go: %w", err)
+	}
+	if exitCode != 0 {
+		return fmt.Errorf("setup-go exited with code %d", exitCode)
+	}
+	return nil
+}

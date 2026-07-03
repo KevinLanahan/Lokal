@@ -5,15 +5,13 @@ import (
 	"fmt"
 )
 
-// stepResult records what happened to a step, for the summary at the end.
 type stepResult struct {
 	name    string
 	passed  bool
 	skipped bool
-	aborted bool // user hit abort — signals the job to stop and print summary
+	aborted bool 
 }
 
-// Run is the main entry point called by the CLI.
 func Run(workflowPath string) error {
 	path, err := findWorkflow(workflowPath)
 	if err != nil {
@@ -56,16 +54,27 @@ func runJob(ctx context.Context, jobID string, job Job) error {
 
 		if step.Uses != "" && step.Run == "" {
 			fmt.Printf("\n  ─── Step %d: %s\n", i+1, name)
-			fmt.Printf("  (uses: %s — action steps not supported in v1, skipping)\n", step.Uses)
-			results = append(results, stepResult{name: name, skipped: true})
-			printStepResult(name, false, true)
+			handled, err := runAction(ctr, step)
+			if err != nil {
+				fmt.Printf("  ✗  FAIL  %s (%v)\n", name, err)
+				results = append(results, stepResult{name: name, passed: false})
+				printSummary(results)
+				return fmt.Errorf("job %q stopped: action %q failed", jobID, name)
+			}
+			if !handled {
+				fmt.Printf("  (uses: %s — not yet supported, skipping)\n", step.Uses)
+				results = append(results, stepResult{name: name, skipped: true})
+				printStepResult(name, false, true)
+			} else {
+				results = append(results, stepResult{name: name, passed: true})
+				printStepResult(name, true, false)
+			}
 			continue
 		}
 
 		result := runStep(ctr, i+1, name, step)
 		results = append(results, result)
 
-		// Always print summary before stopping, whether aborted or failed
 		if result.aborted {
 			fmt.Println("\n  Aborted.")
 			printSummary(results)
@@ -82,7 +91,6 @@ func runJob(ctx context.Context, jobID string, job Job) error {
 	return nil
 }
 
-// runStep handles the pause → execute → result loop for a single step.
 func runStep(ctr *Container, num int, name string, step Step) stepResult {
 	for {
 		action := pause(num, name, step.Run)
@@ -117,11 +125,9 @@ func runStep(ctr *Container, num int, name string, step Step) stepResult {
 				return stepResult{name: name, passed: true}
 			}
 
-			// Step failed — pause and let the user decide what to do
 			fmt.Printf("  Step exited with code %d\n", exitCode)
 			printStepResult(name, false, false)
 
-			// Loop: keep re-prompting until the user picks something decisive
 			for {
 				action = pause(num, name+" (failed — what next?)", "")
 				switch action {
@@ -129,7 +135,6 @@ func runStep(ctr *Container, num int, name string, step Step) stepResult {
 					if err := ctr.dropShell(); err != nil {
 						fmt.Printf("\n  Shell error: %v\n", err)
 					}
-					// Stay in the failure loop so we re-show "failed — what next?"
 				case ActionAbort:
 					return stepResult{name: name, aborted: true}
 				case ActionContinue, ActionSkip:

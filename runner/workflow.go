@@ -23,6 +23,7 @@ type Step struct {
 	Run  string            `yaml:"run"`
 	Uses string            `yaml:"uses"`
 	Env  map[string]string `yaml:"env"`
+	With map[string]string `yaml:"with"`
 }
 
 func findWorkflow(path string) (string, error) {
