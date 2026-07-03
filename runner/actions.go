@@ -2,6 +2,9 @@ package runner
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 )
 
@@ -33,9 +36,92 @@ func runAction(ctr *Container, step Step) (handled bool, err error) {
 	case action == "actions/setup-java":
 		return true, setupJava(ctr, step.With)
 
+	// Cache — skip gracefully (no persistent cache between local runs)
+	case action == "actions/cache", action == "actions/cache/restore", action == "actions/cache/save":
+		key := step.With["key"]
+		if key == "" {
+			key = "?"
+		}
+		fmt.Printf("  (actions/cache — skipped locally, key: %s)\n", key)
+		return true, nil
+
+	// Upload artifact — copy files out of the container to ./cidb-artifacts/
+	case action == "actions/upload-artifact":
+		return true, uploadArtifact(ctr, step.With)
+
+	// Download artifact — copy files from ./cidb-artifacts/ into the container
+	case action == "actions/download-artifact":
+		return true, downloadArtifact(ctr, step.With)
+
 	default:
 		return false, nil
 	}
+}
+
+func uploadArtifact(ctr *Container, with map[string]string) error {
+	name := with["name"]
+	path := with["path"]
+	if path == "" {
+		fmt.Println("  (actions/upload-artifact — no path specified, skipping)")
+		return nil
+	}
+	if name == "" {
+		name = filepath.Base(path)
+	}
+
+	// Resolve to absolute path inside container
+	srcPath := path
+	if !strings.HasPrefix(srcPath, "/") {
+		srcPath = "/workspace/" + srcPath
+	}
+
+	destDir := filepath.Join("cidb-artifacts", name)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return fmt.Errorf("upload-artifact: creating output dir: %w", err)
+	}
+
+	cmd := exec.Command("docker", "cp", ctr.id+":"+srcPath, destDir)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("upload-artifact: %s", strings.TrimSpace(string(out)))
+	}
+
+	fmt.Printf("  (actions/upload-artifact — saved %q to ./cidb-artifacts/%s/)\n", path, name)
+	return nil
+}
+
+func downloadArtifact(ctr *Container, with map[string]string) error {
+	name := with["name"]
+	destPath := with["path"]
+	if destPath == "" {
+		destPath = name
+	}
+	if name == "" {
+		fmt.Println("  (actions/download-artifact — no name specified, skipping)")
+		return nil
+	}
+
+	srcDir := filepath.Join("cidb-artifacts", name)
+	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+		fmt.Printf("  (actions/download-artifact — no local artifact %q found, skipping)\n", name)
+		return nil
+	}
+
+	// Resolve destination path inside container
+	containerDest := destPath
+	if !strings.HasPrefix(containerDest, "/") {
+		containerDest = "/workspace/" + containerDest
+	}
+
+	// Ensure dest dir exists in container
+	ctr.exec("mkdir -p "+containerDest, nil) //nolint:errcheck
+
+	cmd := exec.Command("docker", "cp", srcDir+"/.", ctr.id+":"+containerDest)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("download-artifact: %s", strings.TrimSpace(string(out)))
+	}
+
+	fmt.Printf("  (actions/download-artifact — copied %q into container at %s)\n", name, containerDest)
+	return nil
 }
 
 func setupPython(ctr *Container, with map[string]string) error {
