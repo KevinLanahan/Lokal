@@ -94,9 +94,36 @@ func runJob(ctx context.Context, jobID string, job Job) error {
 				return fmt.Errorf("job %q stopped: action %q failed", jobID, name)
 			}
 			if !handled {
-				fmt.Printf("  (uses: %s — not yet supported, skipping)\n", step.Uses)
-				results = append(results, stepResult{name: name, skipped: true})
-				printStepResult(name, false, true)
+				fmt.Printf("  ⚠  Action not yet supported: %s\n", step.Uses)
+				fmt.Println("  This step will be skipped. If your pipeline needs it,")
+				fmt.Println("  drop into a shell and set it up manually before continuing.")
+				fmt.Println()
+				scanner := bufio.NewScanner(os.Stdin)
+				skipped := false
+				for !skipped {
+					fmt.Print("  [s]kip  [sh]ell  [a]bort  > ")
+					if !scanner.Scan() {
+						results = append(results, stepResult{name: name, aborted: true})
+						printSummary(results)
+						return nil
+					}
+					switch strings.TrimSpace(strings.ToLower(scanner.Text())) {
+					case "s", "skip", "":
+						results = append(results, stepResult{name: name, skipped: true})
+						printStepResult(name, false, true)
+						skipped = true
+					case "sh", "shell":
+						if err := ctr.dropShell(); err != nil {
+							fmt.Printf("\n  Shell error: %v\n", err)
+						}
+					case "a", "abort":
+						fmt.Println("\n  Aborted.")
+						printSummary(results)
+						return nil
+					default:
+						fmt.Println("  Options: s, sh, a")
+					}
+				}
 			} else {
 				results = append(results, stepResult{name: name, passed: true})
 				printStepResult(name, true, false)
