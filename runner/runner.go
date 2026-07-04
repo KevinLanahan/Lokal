@@ -65,6 +65,7 @@ func Run(workflowPath string) error {
 
 	jobPassed := make(map[string]bool) // tracks which jobs succeeded
 	anyJobFailed := false
+	var allResults []stepResult
 
 	for _, jobID := range wf.JobOrder {
 		job := wf.Jobs[jobID]
@@ -94,12 +95,33 @@ func Run(workflowPath string) error {
 			}
 		}
 
-		err := runJob(ctx, jobID, job, evalCtx)
+		results, err := runJob(ctx, jobID, job, evalCtx)
+		allResults = append(allResults, results...)
 		if err != nil {
 			anyJobFailed = true
 			jobPassed[jobID] = false
 		} else {
 			jobPassed[jobID] = true
+		}
+	}
+
+	// Offer to share the session.
+	if len(allResults) > 0 && os.Getenv("SUPABASE_URL") != "" {
+		fmt.Print("\n  Share this session? [y/N] > ")
+		scanner := bufio.NewScanner(os.Stdin)
+		if scanner.Scan() {
+			answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+			if answer == "y" || answer == "yes" {
+				fmt.Print("  Uploading... ")
+				slug, err := ShareSession(wf.Name, wf.Platform, allResults)
+				if err != nil {
+					fmt.Printf("failed: %v\n", err)
+				} else {
+					fmt.Printf("done!\n")
+					fmt.Printf("  Session ID: %s\n", slug)
+					fmt.Printf("  (web viewer coming soon — share this ID with your team)\n")
+				}
+			}
 		}
 	}
 
@@ -109,7 +131,7 @@ func Run(workflowPath string) error {
 	return nil
 }
 
-func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) error {
+func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) ([]stepResult, error) {
 	if job.Image != "" {
 		fmt.Printf("\n  ┌─ Job: %s (image: %s)\n\n", jobID, job.Image)
 	} else {
@@ -118,7 +140,7 @@ func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) er
 
 	ctr, err := startContainer(ctx, job)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer ctr.stop()
 
@@ -149,7 +171,7 @@ func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) er
 				results = append(results, stepResult{name: name, passed: false})
 				state.anyFailed = true
 				printSummary(results)
-				return fmt.Errorf("job %q stopped: action %q failed", jobID, name)
+				return results, fmt.Errorf("job %q stopped: action %q failed", jobID, name)
 			}
 			if !handled {
 				fmt.Printf("  ⚠  Action not yet supported: %s\n", step.Uses)
@@ -163,7 +185,7 @@ func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) er
 					if !scanner.Scan() {
 						results = append(results, stepResult{name: name, aborted: true})
 						printSummary(results)
-						return nil
+						return results, nil
 					}
 					switch strings.TrimSpace(strings.ToLower(scanner.Text())) {
 					case "s", "skip", "":
@@ -177,7 +199,7 @@ func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) er
 					case "a", "abort":
 						fmt.Println("\n  Aborted.")
 						printSummary(results)
-						return nil
+						return results, nil
 					default:
 						fmt.Println("  Options: s, sh, a")
 					}
@@ -199,7 +221,7 @@ func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) er
 		if result.aborted {
 			fmt.Println("\n  Aborted.")
 			printSummary(results)
-			return nil
+			return results, nil
 		}
 
 		if !result.passed && !result.skipped && !result.warned {
@@ -210,9 +232,9 @@ func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) er
 
 	printSummary(results)
 	if state.anyFailed {
-		return fmt.Errorf("job %q finished with failures", jobID)
+		return results, fmt.Errorf("job %q finished with failures", jobID)
 	}
-	return nil
+	return results, nil
 }
 
 func runStep(ctr *Container, num int, name string, step Step, evalCtx *evalContext) stepResult {

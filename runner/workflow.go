@@ -12,6 +12,7 @@ type Workflow struct {
 	Name     string         `yaml:"name"`
 	Jobs     map[string]Job `yaml:"jobs"`
 	JobOrder []string       // ordered job IDs (populated by parsers)
+	Platform string         // "github", "gitlab", "circleci"
 }
 
 type Job struct {
@@ -87,12 +88,24 @@ func parseAnyWorkflow(path string) (*Workflow, error) {
 	dir := filepath.Base(filepath.Dir(path))
 
 	if dir == ".circleci" && (base == "config.yml" || base == "config.yaml") {
-		return parseCircleCI(path)
+		wf, err := parseCircleCI(path)
+		if err == nil {
+			wf.Platform = "circleci"
+		}
+		return wf, err
 	}
 	if base == ".gitlab-ci.yml" || base == ".gitlab-ci.yaml" {
-		return parseGitLabCI(path)
+		wf, err := parseGitLabCI(path)
+		if err == nil {
+			wf.Platform = "gitlab"
+		}
+		return wf, err
 	}
-	return parseGitHubWorkflow(path)
+	wf, err := parseGitHubWorkflow(path)
+	if err == nil {
+		wf.Platform = "github"
+	}
+	return wf, err
 }
 
 func parseGitHubWorkflow(path string) (*Workflow, error) {
