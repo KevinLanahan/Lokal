@@ -13,6 +13,7 @@ import (
 type sharedStep struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+	Output string `json:"output,omitempty"`
 }
 
 type sharedSession struct {
@@ -47,7 +48,7 @@ func ShareSession(wfName, platform string, results []stepResult) (string, error)
 	slug := randomSlug(8)
 	steps := make([]sharedStep, len(results))
 	for i, r := range results {
-		steps[i] = sharedStep{Name: r.name, Status: stepStatusStr(r)}
+		steps[i] = sharedStep{Name: r.name, Status: stepStatusStr(r), Output: r.output}
 	}
 
 	session := sharedSession{

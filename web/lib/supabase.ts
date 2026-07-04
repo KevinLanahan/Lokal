@@ -8,6 +8,7 @@ export const supabase = createClient(
 export type Step = {
   name: string;
   status: "passed" | "failed" | "skipped" | "warned" | "aborted";
+  output?: string;
 };
 
 export type Session = {

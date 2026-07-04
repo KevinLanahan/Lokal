@@ -15,6 +15,7 @@ type stepResult struct {
 	skipped bool
 	warned  bool // failed but continue-on-error: true
 	aborted bool
+	output  string // captured stdout+stderr, capped at 10k chars
 }
 
 func loadEnv() {
@@ -266,13 +267,13 @@ func runStep(ctr *Container, num int, name string, step Step, evalCtx *evalConte
 			if err != nil {
 				fmt.Printf("  Exec error: %v\n", err)
 				printStepResult(name, false, false)
-				return stepResult{name: name, passed: false}
+				return stepResult{name: name, passed: false, output: capOutput(output)}
 			}
 
 			if exitCode == 0 {
 				parseStepOutputs(output, step.ID, evalCtx)
 				printStepResult(name, true, false)
-				return stepResult{name: name, passed: true}
+				return stepResult{name: name, passed: true, output: capOutput(output)}
 			}
 
 			fmt.Printf("  Step exited with code %d\n", exitCode)
@@ -280,7 +281,7 @@ func runStep(ctr *Container, num int, name string, step Step, evalCtx *evalConte
 			// continue-on-error: true — log the failure but let the job continue.
 			if step.ContinueOnError {
 				fmt.Printf("  ⚠  WARN  %s (failed but continue-on-error is set)\n", name)
-				return stepResult{name: name, warned: true}
+				return stepResult{name: name, warned: true, output: capOutput(output)}
 			}
 
 			printStepResult(name, false, false)
@@ -307,7 +308,7 @@ func runStep(ctr *Container, num int, name string, step Step, evalCtx *evalConte
 					} else if exitCode == 0 {
 						parseStepOutputs(output, step.ID, evalCtx)
 						printStepResult(name, true, false)
-						return stepResult{name: name, passed: true}
+						return stepResult{name: name, passed: true, output: capOutput(output)}
 					} else {
 						fmt.Printf("  Step exited with code %d\n", exitCode)
 						printStepResult(name, false, false)
@@ -325,14 +326,22 @@ func runStep(ctr *Container, num int, name string, step Step, evalCtx *evalConte
 						fmt.Printf("\n  Shell error: %v\n", err)
 					}
 				case ActionAbort:
-					return stepResult{name: name, aborted: true}
+					return stepResult{name: name, aborted: true, output: capOutput(output)}
 				case ActionSkip:
 					printStepResult(name, false, true)
-					return stepResult{name: name, skipped: true}
+					return stepResult{name: name, skipped: true, output: capOutput(output)}
 				}
 			}
 		}
 	}
+}
+
+func capOutput(s string) string {
+	const max = 10000
+	if len(s) > max {
+		return s[:max] + "\n... (truncated)"
+	}
+	return s
 }
 
 func stepName(step Step, index int) string {

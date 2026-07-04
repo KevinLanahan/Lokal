@@ -27,6 +27,32 @@ function StatusBadge({ status }: { status: Step["status"] }) {
   );
 }
 
+function StepOutput({ output, status }: { output: string; status: Step["status"] }) {
+  const borderColor = status === "failed" ? "#f8514940" : status === "warned" ? "#d2992240" : "#30363d";
+  return (
+    <details>
+      <summary
+        className="cursor-pointer text-xs px-4 py-1.5 select-none"
+        style={{ color: "var(--gh-muted)", borderTop: "1px solid var(--gh-border)" }}
+      >
+        Show output
+      </summary>
+      <pre
+        className="text-xs font-mono px-4 py-3 overflow-x-auto whitespace-pre-wrap break-words"
+        style={{
+          background: "#010409",
+          color: "#c9d1d9",
+          borderTop: `1px solid ${borderColor}`,
+          maxHeight: "400px",
+          overflowY: "auto",
+        }}
+      >
+        {output}
+      </pre>
+    </details>
+  );
+}
+
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString("en-US", {
     month: "short", day: "numeric", year: "numeric",
@@ -110,19 +136,23 @@ export default async function SessionPage({
         {session.steps.map((step, i) => (
           <div
             key={i}
-            className="flex items-center justify-between px-4 py-3 text-sm"
             style={{
               borderBottom: i < session.steps.length - 1 ? "1px solid var(--gh-border)" : undefined,
               background: i % 2 === 0 ? "var(--gh-bg)" : "var(--gh-surface)",
             }}
           >
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-xs w-5 text-right" style={{ color: "var(--gh-muted)" }}>
-                {i + 1}
-              </span>
-              <span style={{ color: "var(--gh-text)" }}>{step.name}</span>
+            <div className="flex items-center justify-between px-4 py-3 text-sm">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs w-5 text-right" style={{ color: "var(--gh-muted)" }}>
+                  {i + 1}
+                </span>
+                <span style={{ color: "var(--gh-text)" }}>{step.name}</span>
+              </div>
+              <StatusBadge status={step.status} />
             </div>
-            <StatusBadge status={step.status} />
+            {step.output && step.output.trim() && (
+              <StepOutput output={step.output} status={step.status} />
+            )}
           </div>
         ))}
       </div>
