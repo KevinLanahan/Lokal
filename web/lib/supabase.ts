@@ -7,7 +7,7 @@ export const supabase = createClient(
 
 export type Step = {
   name: string;
-  status: "passed" | "failed" | "skipped" | "warned" | "aborted";
+  status: "passed" | "failed" | "skipped" | "warned" | "aborted" | "pending" | "running";
   output?: string;
 };
 
@@ -17,5 +17,6 @@ export type Session = {
   workflow_name: string;
   platform: string;
   steps: Step[];
+  session_status: "running" | "completed" | "failed";
   created_at: string;
 };

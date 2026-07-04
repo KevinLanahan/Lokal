@@ -45,6 +45,17 @@ func loadEnv() {
 	}
 }
 
+func collectStepNames(wf *Workflow) []string {
+	var names []string
+	for _, jobID := range wf.JobOrder {
+		job := wf.Jobs[jobID]
+		for i, step := range job.Steps {
+			names = append(names, stepName(step, i))
+		}
+	}
+	return names
+}
+
 func Run(workflowPath string) error {
 	loadEnv()
 	evalCtx := newEvalContext(loadSecrets())
@@ -62,9 +73,29 @@ func Run(workflowPath string) error {
 	fmt.Printf("  Workflow: %s\n", path)
 	fmt.Printf("  Jobs: %d\n", len(wf.Jobs))
 
+	// Offer live share before the run starts.
+	var live *liveSession
+	scanner := bufio.NewScanner(os.Stdin)
+	if os.Getenv("SUPABASE_URL") != "" {
+		fmt.Print("\n  Share live session? [y/N] > ")
+		if scanner.Scan() {
+			answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
+			if answer == "y" || answer == "yes" {
+				stepNames := collectStepNames(wf)
+				live, err = CreateLiveSession(wf.Name, wf.Platform, stepNames)
+				if err != nil {
+					fmt.Printf("  Warning: could not create live session: %v\n", err)
+					live = nil
+				} else {
+					fmt.Printf("  Live: https://lokal-kappa.vercel.app/s/%s\n", live.slug)
+				}
+			}
+		}
+	}
+
 	ctx := context.Background()
 
-	jobPassed := make(map[string]bool) // tracks which jobs succeeded
+	jobPassed := make(map[string]bool)
 	anyJobFailed := false
 	var allResults []stepResult
 
@@ -96,7 +127,7 @@ func Run(workflowPath string) error {
 			}
 		}
 
-		results, err := runJob(ctx, jobID, job, evalCtx)
+		results, err := runJob(ctx, jobID, job, evalCtx, live)
 		allResults = append(allResults, results...)
 		if err != nil {
 			anyJobFailed = true
@@ -106,10 +137,16 @@ func Run(workflowPath string) error {
 		}
 	}
 
-	// Offer to share the session.
-	if len(allResults) > 0 && os.Getenv("SUPABASE_URL") != "" {
+	// Finalize live session.
+	if live != nil {
+		if err := live.Finish(anyJobFailed); err != nil {
+			fmt.Printf("  Warning: could not finalize session: %v\n", err)
+		}
+	}
+
+	// Offer one-shot share if not already shared live.
+	if live == nil && len(allResults) > 0 && os.Getenv("SUPABASE_URL") != "" {
 		fmt.Print("\n  Share this session? [y/N] > ")
-		scanner := bufio.NewScanner(os.Stdin)
 		if scanner.Scan() {
 			answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
 			if answer == "y" || answer == "yes" {
@@ -131,7 +168,7 @@ func Run(workflowPath string) error {
 	return nil
 }
 
-func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) ([]stepResult, error) {
+func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext, live *liveSession) ([]stepResult, error) {
 	if job.Image != "" {
 		fmt.Printf("\n  ┌─ Job: %s (image: %s)\n\n", jobID, job.Image)
 	} else {
@@ -159,16 +196,27 @@ func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) ([
 			}
 			fmt.Printf("\n  ─── Step %d: %s\n", i+1, name)
 			fmt.Printf("  ⏭  SKIP  %s (%s)\n", name, reason)
-			results = append(results, stepResult{name: name, skipped: true})
+			r := stepResult{name: name, skipped: true}
+			results = append(results, r)
+			if live != nil {
+				_ = live.UpdateStep(name, "skipped", "")
+			}
 			continue
 		}
 
 		if step.Uses != "" && step.Run == "" {
 			fmt.Printf("\n  ─── Step %d: %s\n", i+1, name)
+			if live != nil {
+				_ = live.UpdateStep(name, "running", "")
+			}
 			handled, err := runAction(ctr, step)
 			if err != nil {
 				fmt.Printf("  ✗  FAIL  %s (%v)\n", name, err)
-				results = append(results, stepResult{name: name, passed: false})
+				r := stepResult{name: name, passed: false}
+				results = append(results, r)
+				if live != nil {
+					_ = live.UpdateStep(name, "failed", err.Error())
+				}
 				state.anyFailed = true
 				printSummary(results)
 				return results, fmt.Errorf("job %q stopped: action %q failed", jobID, name)
@@ -183,13 +231,21 @@ func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) ([
 				for !skipped {
 					fmt.Print("  [s]kip  [sh]ell  [a]bort  > ")
 					if !scanner.Scan() {
-						results = append(results, stepResult{name: name, aborted: true})
+						r := stepResult{name: name, aborted: true}
+						results = append(results, r)
+						if live != nil {
+							_ = live.UpdateStep(name, "aborted", "")
+						}
 						printSummary(results)
 						return results, nil
 					}
 					switch strings.TrimSpace(strings.ToLower(scanner.Text())) {
 					case "s", "skip", "":
-						results = append(results, stepResult{name: name, skipped: true})
+						r := stepResult{name: name, skipped: true}
+						results = append(results, r)
+						if live != nil {
+							_ = live.UpdateStep(name, "skipped", "")
+						}
 						printStepResult(name, false, true)
 						skipped = true
 					case "sh", "shell":
@@ -205,14 +261,25 @@ func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext) ([
 					}
 				}
 			} else {
-				results = append(results, stepResult{name: name, passed: true})
+				r := stepResult{name: name, passed: true}
+				results = append(results, r)
+				if live != nil {
+					_ = live.UpdateStep(name, "passed", "")
+				}
 				printStepResult(name, true, false)
 			}
 			continue
 		}
 
+		if live != nil {
+			_ = live.UpdateStep(name, "running", "")
+		}
 		result := runStep(ctr, i+1, name, step, evalCtx)
 		results = append(results, result)
+
+		if live != nil {
+			_ = live.UpdateStep(name, stepStatusStr(result), result.output)
+		}
 
 		if !result.passed && !result.skipped && !result.warned {
 			state.anyFailed = true
