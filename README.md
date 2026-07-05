@@ -6,9 +6,25 @@ No more commit → push → wait → fail → repeat.
 
 ---
 
-## Quickstart
+## Install
 
-**Requirements:** [Go 1.22+](https://go.dev/dl/) · [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+```bash
+curl -fsSL https://raw.githubusercontent.com/KevinLanahan/Lokal/main/install.sh | sh
+```
+
+Works on macOS (Intel + Apple Silicon) and Linux. Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) to be running.
+
+Then in any project with a CI workflow file:
+
+```bash
+lokal run
+```
+
+lokal will auto-discover your workflow file and start stepping through it.
+
+> **Don't have a workflow file yet?** Run `lokal init` to scaffold one for GitHub Actions, GitLab CI, or CircleCI.
+
+### Build from source
 
 ```bash
 git clone https://github.com/KevinLanahan/Lokal.git
@@ -17,9 +33,7 @@ go build -o lokal .
 ./lokal run
 ```
 
-That's it. lokal will auto-discover your workflow file and start stepping through it.
-
-> **Don't have a workflow file yet?** Run `./lokal init` to scaffold one for GitHub Actions, GitLab CI, or CircleCI.
+Requires [Go 1.22+](https://go.dev/dl/).
 
 ---
 
@@ -42,11 +56,11 @@ When lokal pauses before a step:
 Store secrets for your pipeline runs — they get injected into the container automatically:
 
 ```bash
-./lokal secrets set AWS_ACCESS_KEY_ID=abc123
-./lokal secrets set NPM_TOKEN=xyz789
-./lokal secrets list        # view stored secrets (masked)
-./lokal secrets remove KEY  # remove a secret
-./lokal secrets import      # import matching vars from your shell env
+lokal secrets set AWS_ACCESS_KEY_ID=abc123
+lokal secrets set NPM_TOKEN=xyz789
+lokal secrets list        # view stored secrets (masked)
+lokal secrets remove KEY  # remove a secret
+lokal secrets import      # import matching vars from your shell env
 ```
 
 Secrets are stored in `.env` (already in `.gitignore` — never committed).
@@ -86,7 +100,7 @@ SUPABASE_ANON_KEY=your-anon-key
 
 To delete a shared session:
 ```bash
-./lokal delete <slug>
+lokal delete <slug>
 ```
 
 ---
