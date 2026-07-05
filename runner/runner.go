@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -57,8 +58,28 @@ func collectStepNames(wf *Workflow) []string {
 	return names
 }
 
+func checkDocker() error {
+	cmd := exec.Command("docker", "info")
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf(`Docker is not running.
+
+  lokal requires Docker to execute pipeline steps.
+  Please start Docker Desktop (or the Docker daemon) and try again.
+
+  → https://docs.docker.com/get-docker/`)
+	}
+	return nil
+}
+
 func Run(workflowPath string) error {
 	loadEnv()
+
+	if err := checkDocker(); err != nil {
+		return err
+	}
+
 	evalCtx := newEvalContext(loadSecrets())
 	path, err := findWorkflow(workflowPath)
 	if err != nil {
