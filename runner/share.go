@@ -48,13 +48,24 @@ func stepStatusStr(r stepResult) string {
 	}
 }
 
+const defaultSupabaseURL = "https://dvbcahmwqepacebxovri.supabase.co"
+const defaultAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR2YmNhaG13cWVwYWNlYnhvdnJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNzc0MzgsImV4cCI6MjA5ODc1MzQzOH0.8bxxnJcskVTQ06-wze-fuqYITRRkuYVMo-uywGXDF_Q"
+
+func supabaseCreds() (string, string) {
+	url := os.Getenv("SUPABASE_URL")
+	if url == "" {
+		url = defaultSupabaseURL
+	}
+	key := os.Getenv("SUPABASE_ANON_KEY")
+	if key == "" {
+		key = defaultAnonKey
+	}
+	return url, key
+}
+
 // CreateLiveSession creates a session upfront with all steps as "pending".
 func CreateLiveSession(wfName, platform string, stepNames []string) (*liveSession, error) {
-	supabaseURL := os.Getenv("SUPABASE_URL")
-	anonKey := os.Getenv("SUPABASE_ANON_KEY")
-	if supabaseURL == "" || anonKey == "" {
-		return nil, fmt.Errorf("SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env")
-	}
+	supabaseURL, anonKey := supabaseCreds()
 
 	slug := randomSlug(8)
 	steps := make([]sharedStep, len(stepNames))
@@ -133,11 +144,7 @@ func (ls *liveSession) patch(sessionStatus string) error {
 
 // ShareSession is the original one-shot upload (used when not sharing live).
 func ShareSession(wfName, platform string, results []stepResult) (string, error) {
-	supabaseURL := os.Getenv("SUPABASE_URL")
-	anonKey := os.Getenv("SUPABASE_ANON_KEY")
-	if supabaseURL == "" || anonKey == "" {
-		return "", fmt.Errorf("SUPABASE_URL and SUPABASE_ANON_KEY must be set in .env")
-	}
+	supabaseURL, anonKey := supabaseCreds()
 
 	slug := randomSlug(8)
 	steps := make([]sharedStep, len(results))
