@@ -149,7 +149,7 @@ func Run(workflowPath string) error {
 			}
 		}
 
-		results, err := runJob(ctx, jobID, job, evalCtx, live)
+		results, err := runJob(ctx, jobID, job, evalCtx, live, evalCtx.secrets)
 		allResults = append(allResults, results...)
 		if err != nil {
 			anyJobFailed = true
@@ -190,14 +190,14 @@ func Run(workflowPath string) error {
 	return nil
 }
 
-func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext, live *liveSession) ([]stepResult, error) {
+func runJob(ctx context.Context, jobID string, job Job, evalCtx *evalContext, live *liveSession, secrets map[string]string) ([]stepResult, error) {
 	if job.Image != "" {
 		fmt.Printf("\n  ┌─ Job: %s (image: %s)\n\n", jobID, job.Image)
 	} else {
 		fmt.Printf("\n  ┌─ Job: %s (runs-on: %s)\n\n", jobID, job.RunsOn)
 	}
 
-	ctr, err := startContainer(ctx, job)
+	ctr, err := startContainer(ctx, job, secrets)
 	if err != nil {
 		return nil, err
 	}

@@ -29,7 +29,7 @@ type Container struct {
 	ctx context.Context
 }
 
-func startContainer(ctx context.Context, job Job) (*Container, error) {
+func startContainer(ctx context.Context, job Job, secrets map[string]string) (*Container, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("connecting to Docker: %w\nIs Docker running?", err)
@@ -59,11 +59,18 @@ func startContainer(ctx context.Context, job Job) (*Container, error) {
 		return nil, err
 	}
 
+	// Inject secrets as container-level env vars so every step has access.
+	var containerEnv []string
+	for k, v := range secrets {
+		containerEnv = append(containerEnv, k+"="+v)
+	}
+
 	resp, err := cli.ContainerCreate(ctx,
 		&container.Config{
 			Image:      image,
 			Cmd:        []string{"tail", "-f", "/dev/null"},
 			WorkingDir: "/workspace",
+			Env:        containerEnv,
 		},
 		&container.HostConfig{
 			Binds: []string{workdir + ":/workspace"},
