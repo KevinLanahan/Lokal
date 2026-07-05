@@ -13,9 +13,9 @@ export default function Home() {
 
       <div className="rounded-lg p-5 mb-10 font-mono text-sm" style={{ background: "var(--gh-surface)", border: "1px solid var(--gh-border)" }}>
         <p style={{ color: "var(--gh-muted)" }} className="mb-3 text-xs uppercase tracking-wide font-sans">Install</p>
-        <p style={{ color: "var(--gh-green)" }}>$ git clone https://github.com/KevinLanahan/Lokal.git</p>
-        <p style={{ color: "var(--gh-green)" }}>$ cd Lokal && go build -o lokal .</p>
-        <p style={{ color: "var(--gh-green)" }}>$ ./lokal run</p>
+        <p style={{ color: "var(--gh-green)" }}>$ curl -fsSL https://raw.githubusercontent.com/KevinLanahan/Lokal/main/install.sh | sh</p>
+        <p style={{ color: "var(--gh-muted)" }} className="mt-3 mb-1">Then in any project with a CI workflow:</p>
+        <p style={{ color: "var(--gh-green)" }}>$ lokal run</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

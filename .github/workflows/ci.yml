@@ -26,13 +26,16 @@ jobs:
         run: go vet ./...
         env:
           CGO_ENABLED: "0"
+          TMPDIR: /tmp
 
       - name: Test
         run: go test ./...
         env:
           CGO_ENABLED: "0"
+          TMPDIR: /tmp
 
       - name: Build
         run: go build -o lokal .
         env:
           CGO_ENABLED: "0"
+          TMPDIR: /tmp

@@ -98,7 +98,7 @@ func Run(workflowPath string) error {
 	// Offer live share before the run starts.
 	var live *liveSession
 	scanner := bufio.NewScanner(os.Stdin)
-	if os.Getenv("SUPABASE_URL") != "" {
+	{
 		fmt.Print("\n  Share live session? [y/N] > ")
 		if scanner.Scan() {
 			answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
@@ -167,7 +167,7 @@ func Run(workflowPath string) error {
 	}
 
 	// Offer one-shot share if not already shared live.
-	if live == nil && len(allResults) > 0 && os.Getenv("SUPABASE_URL") != "" {
+	if live == nil && len(allResults) > 0 {
 		fmt.Print("\n  Share this session? [y/N] > ")
 		if scanner.Scan() {
 			answer := strings.TrimSpace(strings.ToLower(scanner.Text()))
