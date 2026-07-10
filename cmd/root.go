@@ -8,12 +8,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var version = "dev"
+
+func SetVersion(v string) {
+	version = v
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "lokal",
 	Short: "lokal — step-through debugger for CI pipelines",
 	Long: `lokal lets you run CI pipelines locally (GitHub Actions, GitLab CI, and CircleCI),
 pausing before each step so you can inspect, skip, retry, or
 drop into a live shell inside the running container.`,
+}
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print the lokal version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("lokal " + version)
+	},
 }
 
 var runCmd = &cobra.Command{
@@ -40,4 +54,5 @@ func Execute() {
 
 func init() {
 	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(versionCmd)
 }
